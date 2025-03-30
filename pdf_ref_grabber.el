@@ -28,9 +28,9 @@
 
 (defcustom bib_loc "~/.org/papers.bib" "Location of the bibliography to write to" :type 'string)
 (defcustom pdf_location "~/Documents/papers/" "Location to store the PDF files in" :type 'string)
-(defcustom paper_list_location " ~/.org/2024/papers.org" "Location of the paper list org-file" :type 'string)
+(defcustom paper_list_location " ~/.org/2025/papers.org" "Location of the paper list org-file" :type 'string)
 
-(defun my/organise_pdf()
+(defun my/organise-pdf ()
   "Organize PDF: rename, copy to papers directory,
  create bibtex entry, and add to papers.org."
   (interactive)
@@ -47,11 +47,20 @@
              (resp (zotero-response-data response))
              (title (plist-get resp :title))
              (authors (plist-get resp :authors))
-             (year (or (plist-get resp :year) (format-time-string "%Y")))
+             (doi (plist-get resp :doi))
+             ;; Extract year from response, fallback to arXiv URL pattern, then current year
+             (year-from-response (plist-get resp :year))
+             (year (cond
+                    ;; First try to use the year from the response
+                    (year-from-response year-from-response)
+                    ;; Then check if the original file might be from arXiv
+                    ((and original-file
+                          (string-match "\\(\\([0-9]\\{2\\}\\)[0-9]\\{2\\}\\.[0-9]\\{4,5\\}\\)" original-file))
+                     (concat "20" (match-string 2 original-file)))
+                    ;; Fallback to current year
+                    (t (format-time-string "%Y"))))
              (abstract (plist-get resp :abstract))
-             ;; (cleaned-title (replace-regexp-in-string "[^a-zA-Z0-9]+" "_" title))
-             ;; (new-filename (concat cleaned-title ".pdf"))
-             (papers-dir "~/Documents/papers/")
+             (papers-dir pdf_location)
              (first-author-last (plist-get (aref authors 0) :lastName))
              (citation-key (format "%s%s_%s"
                                    (downcase first-author-last)
@@ -66,6 +75,7 @@
   author = {%s},
   abstract = {%s},
   year = {%s},
+  doi = {%s},
   file = {%s}
 }"
                                    citation-key
@@ -75,9 +85,9 @@
                                                         (plist-get author :lastName)
                                                         (plist-get author :firstName)))
                                               authors " and ")
-                                   ;; bib_loc
                                    abstract
                                    year
+                                   (or doi "")
                                    new-file-path)))
         ;; Add bibtex entry
         (with-current-buffer (find-file-noselect bib_loc)
@@ -88,13 +98,14 @@
         ;; Add entry to papers.org
         (with-current-buffer (find-file-noselect paper_list_location)
           (goto-char (point-max))
-          (insert (format "** TODO (cite:%s) %s\n" citation-key title))
+          (insert (format "** %s\n:PROPERTIES:\n:CITE: cite:%s\n:END:"
+                          title citation-key ))
           (save-buffer))
 
         ;; Rename and copy PDF
         (copy-file original-file new-file-path t)
 
-        (message "PDF organized, bibtex entry created, and added to papers.org"))
+        (message "PDF organized, bibtex entry created, and added to papers.org")
     (message "Not viewing a PDF file.")))
 
 
